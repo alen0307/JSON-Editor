@@ -7,4 +7,7 @@
 5. 搜索功能
 6. 加载/保存JSON文件
 7. 支持数组和对象的正确处理
+   
+ ![7](https://github.com/user-attachments/assets/7596129d-6908-4930-8968-6c0b14c17f1a)
+  
 ![捕捉-2](https://github.com/user-attachments/assets/d4e8c883-c725-4860-a463-c3d310029a81)
