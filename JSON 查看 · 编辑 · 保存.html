@@ -1,0 +1,822 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON 编辑器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .tree-panel {
+            width: 30%;
+            background-color: white;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tree-header {
+            padding: 10px;
+            background-color: #ecf0f1;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .search-container input {
+            flex: 1;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+
+        .tree-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .tree-node {
+            margin: 5px 0;
+            cursor: pointer;
+        }
+
+        .tree-node-content {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .tree-node-content:hover {
+            background-color: #f0f0f0;
+        }
+
+        .tree-node-content.selected {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .node-indent {
+            margin-left: 20px;
+        }
+
+        .toggle-icon {
+            margin-right: 5px;
+            width: 16px;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .node-type {
+            margin-left: 5px;
+            font-size: 0.8em;
+            color: #7f8c8d;
+        }
+
+        .editor-panel {
+            width: 70%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-header {
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        textarea {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        .node-actions {
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>JSON 编辑器</h1>
+        <div class="controls">
+            <button id="loadBtn">加载 JSON</button>
+            <button id="saveBtn">保存 JSON</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="tree-panel">
+            <div class="tree-header">
+                JSON 结构
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="搜索...">
+                    <button id="searchBtn">搜索</button>
+                </div>
+            </div>
+            <div class="tree-container" id="treeContainer">
+                <!-- 树形结构将在这里生成 -->
+            </div>
+        </div>
+        
+        <div class="editor-panel">
+            <div class="editor-header">
+                <div id="currentPath">未选择节点</div>
+                <div class="editor-actions">
+                    <button id="updateBtn">更新节点</button>
+                </div>
+            </div>
+            <textarea id="jsonEditor" placeholder="选择一个节点来编辑其内容"></textarea>
+            <div class="node-actions">
+                <button id="addObjectBtn">添加对象</button>
+                <button id="addArrayBtn">添加数组</button>
+                <button id="addValueBtn">添加值</button>
+                <button id="deleteNodeBtn">删除节点</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let jsonData = {};
+        let selectedNodePath = '';
+        let selectedNode = null;
+        let searchResults = [];
+        let currentSearchIndex = -1;
+
+        // DOM 元素
+        const treeContainer = document.getElementById('treeContainer');
+        const jsonEditor = document.getElementById('jsonEditor');
+        const currentPath = document.getElementById('currentPath');
+        const loadBtn = document.getElementById('loadBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const updateBtn = document.getElementById('updateBtn');
+        const addObjectBtn = document.getElementById('addObjectBtn');
+        const addArrayBtn = document.getElementById('addArrayBtn');
+        const addValueBtn = document.getElementById('addValueBtn');
+        const deleteNodeBtn = document.getElementById('deleteNodeBtn');
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+
+        // 初始化示例数据
+        function initSampleData() {
+            jsonData = {
+                "name": "示例数据",
+                "version": "1.0",
+                "data": {
+                    "users": [
+                        {"id": 1, "name": "张三", "active": true},
+                        {"id": 2, "name": "李四", "active": false}
+                    ],
+                    "settings": {
+                        "theme": "dark",
+                        "notifications": true
+                    }
+                },
+                "metadata": {
+                    "created": "2023-01-01",
+                    "updated": "2023-12-01"
+                }
+            };
+            renderTree();
+        }
+
+        // 渲染树形结构
+        function renderTree() {
+            treeContainer.innerHTML = '';
+            // 创建根节点
+            const rootNode = document.createElement('div');
+            rootNode.className = 'tree-node';
+            rootNode.style.paddingLeft = '0px';
+            
+            const rootContent = document.createElement('div');
+            rootContent.className = 'tree-node-content';
+            rootContent.setAttribute('data-path', '');
+            rootContent.innerHTML = '<span>ROOT</span><span class="node-type">(object)</span>';
+            
+            rootContent.addEventListener('click', () => {
+                selectNode('', jsonData);
+            });
+            
+            rootNode.appendChild(rootContent);
+            
+            // 创建根节点的子容器
+            const rootSubContainer = document.createElement('div');
+            rootSubContainer.className = 'node-indent';
+            rootSubContainer.style.display = 'block';
+            rootSubContainer.setAttribute('data-path', '');
+            rootNode.appendChild(rootSubContainer);
+            
+            treeContainer.appendChild(rootNode);
+            
+            // 渲染根对象的属性
+            renderTreeNode(jsonData, '', 1);
+        }
+
+        // 递归渲染树节点
+        function renderTreeNode(obj, path, level) {
+            if (obj === null || typeof obj !== 'object') return;
+
+            // 如果是数组，遍历数组元素
+            if (Array.isArray(obj)) {
+                obj.forEach((item, index) => {
+                    const currentPath = path ? `${path}.${index}` : `${index}`;
+                    const isObject = item !== null && typeof item === 'object';
+                    
+                    const nodeDiv = document.createElement('div');
+                    nodeDiv.className = 'tree-node';
+                    nodeDiv.style.paddingLeft = `${level * 20}px`;
+                    
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'tree-node-content';
+                    contentDiv.setAttribute('data-path', currentPath);
+                    
+                    if (isObject) {
+                        const toggleIcon = document.createElement('span');
+                        toggleIcon.className = 'toggle-icon';
+                        toggleIcon.textContent = '+';
+                        contentDiv.appendChild(toggleIcon);
+                    } else {
+                        const placeholder = document.createElement('span');
+                        placeholder.className = 'toggle-icon';
+                        placeholder.textContent = '  ';
+                        contentDiv.appendChild(placeholder);
+                    }
+                    
+                    contentDiv.innerHTML += `<span>[${index}]</span><span class="node-type">(${getTypeString(item)})</span>`;
+                    
+                    contentDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        selectNode(currentPath, item);
+                    });
+                    
+                    nodeDiv.appendChild(contentDiv);
+                    
+                    if (isObject) {
+                        const subContainer = document.createElement('div');
+                        subContainer.className = 'node-indent';
+                        subContainer.style.display = 'none';
+                        subContainer.setAttribute('data-path', currentPath);
+                        nodeDiv.appendChild(subContainer);
+                        
+                        // 点击切换展开/折叠
+                        contentDiv.addEventListener('click', () => {
+                            const isExpanded = subContainer.style.display === 'block';
+                            
+                            if (isExpanded) {
+                                // 折叠
+                                subContainer.style.display = 'none';
+                                contentDiv.querySelector('.toggle-icon').textContent = '+';
+                            } else {
+                                // 展开
+                                if (subContainer.children.length === 0) {
+                                    // 首次展开，渲染子节点
+                                    renderTreeNode(item, currentPath, level + 1);
+                                }
+                                subContainer.style.display = 'block';
+                                contentDiv.querySelector('.toggle-icon').textContent = '-';
+                            }
+                        });
+                    }
+                    
+                    // 将节点添加到父容器
+                    const parentPath = path || '';
+                    const parentContainer = document.querySelector(`[data-path="${parentPath}"]`).parentElement.querySelector(`[data-path="${parentPath}"] ~ .node-indent`);
+                    if (parentContainer) {
+                        parentContainer.appendChild(nodeDiv);
+                    }
+                });
+            } else {
+                // 如果是对象，遍历属性
+                const keys = Object.keys(obj);
+                keys.forEach(key => {
+                    const currentPath = path ? `${path}.${key}` : key;
+                    const value = obj[key];
+                    const isObject = value !== null && typeof value === 'object';
+                    
+                    const nodeDiv = document.createElement('div');
+                    nodeDiv.className = 'tree-node';
+                    nodeDiv.style.paddingLeft = `${level * 20}px`;
+                    
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'tree-node-content';
+                    contentDiv.setAttribute('data-path', currentPath);
+                    
+                    if (isObject) {
+                        const toggleIcon = document.createElement('span');
+                        toggleIcon.className = 'toggle-icon';
+                        toggleIcon.textContent = '+';
+                        contentDiv.appendChild(toggleIcon);
+                    } else {
+                        const placeholder = document.createElement('span');
+                        placeholder.className = 'toggle-icon';
+                        placeholder.textContent = '  ';
+                        contentDiv.appendChild(placeholder);
+                    }
+                    
+                    contentDiv.innerHTML += `<span>${key}</span><span class="node-type">(${getTypeString(value)})</span>`;
+                    
+                    contentDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        selectNode(currentPath, value);
+                    });
+                    
+                    nodeDiv.appendChild(contentDiv);
+                    
+                    if (isObject) {
+                        const subContainer = document.createElement('div');
+                        subContainer.className = 'node-indent';
+                        subContainer.style.display = 'none';
+                        subContainer.setAttribute('data-path', currentPath);
+                        nodeDiv.appendChild(subContainer);
+                        
+                        // 点击切换展开/折叠
+                        contentDiv.addEventListener('click', () => {
+                            const isExpanded = subContainer.style.display === 'block';
+                            
+                            if (isExpanded) {
+                                // 折叠
+                                subContainer.style.display = 'none';
+                                contentDiv.querySelector('.toggle-icon').textContent = '+';
+                            } else {
+                                // 展开
+                                if (subContainer.children.length === 0) {
+                                    // 首次展开，渲染子节点
+                                    renderTreeNode(value, currentPath, level + 1);
+                                }
+                                subContainer.style.display = 'block';
+                                contentDiv.querySelector('.toggle-icon').textContent = '-';
+                            }
+                        });
+                    }
+                    
+                    // 将节点添加到父容器
+                    const parentPath = path || '';
+                    const parentContainer = document.querySelector(`[data-path="${parentPath}"]`).parentElement.querySelector(`[data-path="${parentPath}"] ~ .node-indent`);
+                    if (parentContainer) {
+                        parentContainer.appendChild(nodeDiv);
+                    }
+                });
+            }
+        }
+
+        // 获取值的类型字符串
+        function getTypeString(value) {
+            if (value === null) return 'null';
+            if (Array.isArray(value)) return 'array';
+            return typeof value;
+        }
+
+        // 选择节点
+        function selectNode(path, node) {
+            // 清除之前的选择
+            document.querySelectorAll('.tree-node-content').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            // 高亮当前选择
+            const selectedElement = document.querySelector(`[data-path="${path}"]`);
+            if (selectedElement) {
+                selectedElement.classList.add('selected');
+            }
+            
+            selectedNodePath = path;
+            selectedNode = node;
+            currentPath.textContent = path ? `当前路径: ${path}` : '当前路径: ROOT';
+            
+            // 显示节点内容（不包括子节点）
+            if (node !== null && typeof node === 'object') {
+                // 只显示当前层级的值，不包括子对象
+                const simpleValue = Array.isArray(node) 
+                    ? node.map(item => typeof item === 'object' ? `{...}` : item) 
+                    : Object.keys(node).reduce((acc, key) => {
+                        const value = node[key];
+                        acc[key] = typeof value === 'object' && value !== null ? `{...}` : value;
+                        return acc;
+                    }, {});
+                
+                jsonEditor.value = JSON.stringify(simpleValue, null, 2);
+            } else {
+                jsonEditor.value = JSON.stringify(node, null, 2);
+            }
+        }
+
+        // 更新节点内容
+        function updateNode() {
+            if (!selectedNodePath || selectedNode === null) {
+                alert('请先选择一个节点');
+                return;
+            }
+            
+            try {
+                const newValue = JSON.parse(jsonEditor.value);
+                
+                // 更新原始数据
+                if (selectedNodePath === '') {
+                    jsonData = newValue;
+                } else {
+                    setNestedProperty(jsonData, selectedNodePath, newValue);
+                }
+                
+                // 重新渲染树
+                renderTree();
+                
+                // 重新选择节点
+                selectNode(selectedNodePath, newValue);
+                
+                alert('节点更新成功！');
+            } catch (e) {
+                alert('JSON 格式错误: ' + e.message);
+            }
+        }
+
+        // 设置嵌套属性
+        function setNestedProperty(obj, path, value) {
+            const parts = path.split('.');
+            let current = obj;
+            
+            for (let i = 0; i < parts.length - 1; i++) {
+                current = current[parts[i]];
+            }
+            
+            current[parts[parts.length - 1]] = value;
+        }
+
+        // 添加对象节点
+        function addObject() {
+            if (!selectedNodePath && selectedNodePath !== '') {
+                alert('请先选择一个节点');
+                return;
+            }
+            
+            const parent = selectedNodePath === '' ? jsonData : getNestedProperty(jsonData, selectedNodePath);
+            
+            if (!parent || typeof parent !== 'object') {
+                alert('当前节点不支持添加子节点');
+                return;
+            }
+            
+            let nodeName;
+            if (Array.isArray(parent)) {
+                nodeName = parent.length; // 数组使用下一个索引
+            } else {
+                nodeName = prompt('请输入新对象节点的名称:');
+                if (!nodeName) return;
+            }
+            
+            try {
+                parent[nodeName] = {};
+                renderTree();
+                alert('对象节点添加成功！');
+            } catch (e) {
+                alert('添加对象节点失败: ' + e.message);
+            }
+        }
+
+        // 添加数组节点
+        function addArray() {
+            if (!selectedNodePath && selectedNodePath !== '') {
+                alert('请先选择一个节点');
+                return;
+            }
+            
+            const parent = selectedNodePath === '' ? jsonData : getNestedProperty(jsonData, selectedNodePath);
+            
+            if (!parent || typeof parent !== 'object') {
+                alert('当前节点不支持添加子节点');
+                return;
+            }
+            
+            let nodeName;
+            if (Array.isArray(parent)) {
+                nodeName = parent.length; // 数组使用下一个索引
+            } else {
+                nodeName = prompt('请输入新数组节点的名称:');
+                if (!nodeName) return;
+            }
+            
+            try {
+                parent[nodeName] = [];
+                renderTree();
+                alert('数组节点添加成功！');
+            } catch (e) {
+                alert('添加数组节点失败: ' + e.message);
+            }
+        }
+
+        // 添加值节点
+        function addValue() {
+            if (!selectedNodePath && selectedNodePath !== '') {
+                alert('请先选择一个节点');
+                return;
+            }
+            
+            const parent = selectedNodePath === '' ? jsonData : getNestedProperty(jsonData, selectedNodePath);
+            
+            if (!parent || typeof parent !== 'object') {
+                alert('当前节点不支持添加子节点');
+                return;
+            }
+            
+            let nodeName;
+            if (Array.isArray(parent)) {
+                nodeName = parent.length; // 数组使用下一个索引
+            } else {
+                nodeName = prompt('请输入新值节点的名称:');
+                if (!nodeName) return;
+            }
+            
+            const nodeValue = prompt('请输入值 (支持字符串、数字、布尔值、null):');
+            if (nodeValue === null) return;
+            
+            try {
+                // 尝试解析值，如果失败则作为字符串处理
+                let parsedValue;
+                try {
+                    parsedValue = JSON.parse(nodeValue);
+                } catch {
+                    parsedValue = nodeValue; // 作为字符串处理
+                }
+                
+                parent[nodeName] = parsedValue;
+                renderTree();
+                alert('值节点添加成功！');
+            } catch (e) {
+                alert('添加值节点失败: ' + e.message);
+            }
+        }
+
+        // 获取嵌套属性
+        function getNestedProperty(obj, path) {
+            const parts = path.split('.');
+            let current = obj;
+            
+            for (const part of parts) {
+                current = current[part];
+            }
+            
+            return current;
+        }
+
+        // 删除节点
+        function deleteNode() {
+            if (!selectedNodePath && selectedNodePath !== '') {
+                alert('请先选择一个节点');
+                return;
+            }
+            
+            if (!selectedNodePath) {
+                alert('不能删除根节点');
+                return;
+            }
+            
+            if (!confirm('确定要删除此节点吗？')) {
+                return;
+            }
+            
+            try {
+                const parentPath = selectedNodePath.substring(0, selectedNodePath.lastIndexOf('.'));
+                const key = selectedNodePath.split('.').pop();
+                const parent = parentPath ? getNestedProperty(jsonData, parentPath) : jsonData;
+                
+                if (parent && typeof parent === 'object') {
+                    if (Array.isArray(parent)) {
+                        // 对于数组，使用splice删除元素
+                        const index = parseInt(key);
+                        parent.splice(index, 1);
+                    } else {
+                        // 对于对象，使用delete删除属性
+                        delete parent[key];
+                    }
+                    renderTree();
+                    jsonEditor.value = '';
+                    currentPath.textContent = '未选择节点';
+                    selectedNodePath = '';
+                    selectedNode = null;
+                    alert('节点删除成功！');
+                }
+            } catch (e) {
+                alert('删除节点失败: ' + e.message);
+            }
+        }
+
+        // 搜索功能
+        function searchNodes() {
+            const searchTerm = searchInput.value.trim();
+            if (!searchTerm) return;
+            
+            // 如果搜索词没变，继续搜索下一个结果
+            if (searchTerm === searchResults.lastSearchTerm && currentSearchIndex < searchResults.length - 1) {
+                currentSearchIndex++;
+            } else {
+                // 否则重新搜索
+                searchResults = [];
+                currentSearchIndex = -1;
+                searchResults.lastSearchTerm = searchTerm;
+                
+                // 递归搜索所有节点
+                function searchRecursive(obj, path) {
+                    if (obj === null || typeof obj !== 'object') return;
+                    
+                    if (Array.isArray(obj)) {
+                        obj.forEach((item, index) => {
+                            const currentPath = path ? `${path}.${index}` : `${index}`;
+                            
+                            // 检查值是否匹配
+                            if (JSON.stringify(item).toLowerCase().includes(searchTerm.toLowerCase())) {
+                                searchResults.push(currentPath);
+                            }
+                            
+                            // 递归搜索子节点
+                            if (typeof item === 'object' && item !== null) {
+                                searchRecursive(item, currentPath);
+                            }
+                        });
+                    } else {
+                        // 对象
+                        Object.keys(obj).forEach(key => {
+                            const currentPath = path ? `${path}.${key}` : key;
+                            const value = obj[key];
+                            
+                            // 检查键名是否匹配
+                            if (key.toLowerCase().includes(searchTerm.toLowerCase())) {
+                                searchResults.push(currentPath);
+                            }
+                            
+                            // 检查值是否匹配
+                            if (JSON.stringify(value).toLowerCase().includes(searchTerm.toLowerCase())) {
+                                searchResults.push(currentPath);
+                            }
+                            
+                            // 递归搜索子节点
+                            if (typeof value === 'object' && value !== null) {
+                                searchRecursive(value, currentPath);
+                            }
+                        });
+                    }
+                }
+                
+                searchRecursive(jsonData, '');
+                currentSearchIndex = 0;
+            }
+            
+            if (searchResults.length > 0 && currentSearchIndex < searchResults.length) {
+                const path = searchResults[currentSearchIndex];
+                const node = path ? getNestedProperty(jsonData, path) : jsonData;
+                selectNode(path, node);
+                
+                // 滚动到选中的节点
+                const nodeElement = document.querySelector(`[data-path="${path}"]`);
+                if (nodeElement) {
+                    nodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } else {
+                alert('没有找到匹配的结果');
+                currentSearchIndex = -1;
+            }
+        }
+
+        // 加载 JSON 文件
+        function loadJsonFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        jsonData = JSON.parse(e.target.result);
+                        renderTree();
+                        alert('JSON 文件加载成功！');
+                    } catch (error) {
+                        alert('JSON 文件格式错误: ' + error.message);
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+
+        // 保存 JSON 文件
+        function saveJsonFile() {
+            try {
+                const dataStr = JSON.stringify(jsonData, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                
+                const exportFileDefaultName = 'data.json';
+                
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                document.body.appendChild(linkElement);
+                linkElement.click();
+                document.body.removeChild(linkElement);
+                
+                alert('JSON 文件保存成功！');
+            } catch (error) {
+                alert('保存失败: ' + error.message);
+            }
+        }
+
+        // 事件监听器
+        loadBtn.addEventListener('click', loadJsonFile);
+        saveBtn.addEventListener('click', saveJsonFile);
+        updateBtn.addEventListener('click', updateNode);
+        addObjectBtn.addEventListener('click', addObject);
+        addArrayBtn.addEventListener('click', addArray);
+        addValueBtn.addEventListener('click', addValue);
+        deleteNodeBtn.addEventListener('click', deleteNode);
+        searchBtn.addEventListener('click', searchNodes);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchNodes();
+            }
+        });
+
+        // 初始化
+        initSampleData();
+    </script>
+</body>
+</html>
+```
